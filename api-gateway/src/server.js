@@ -1,10 +1,85 @@
+require('dotenv').config();
+const cors = require('cors');
+const helmet = require('helmet');
+const Redis = require('ioredis');
 const express = require('express');
+const { RedisStore } = require('rate-limit-redis');
+const {rateLimit} = require('express-rate-limit');
+const logger = require('./utils/logger');
+const proxy = require('express-http-proxy');
+const errorHandler = require('./middleware/errorhandler');
+
 const app = express();
 
-app.get('/', (req, res) => {
-    res.send('Welcome Home!');
+const PORT = process.env.PORT || 3000;
+const REDIS_PORT = process.env.REDIS_URL|| 6379;
+
+const redisClient = Redis.createClient(REDIS_PORT);
+
+app.use(cors());
+app.use(helmet());
+app.use(express.json());
+
+
+//rate limiting
+const rateLimiter =  rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 30,
+    standardHeaders: true,
+    legacyHeaders: false,
+    handler: (req, res) => {
+        logger.warn('Sensitive endpoints exceeded for IP', req.ip);
+        res.status(429).json({
+            success: false,
+            message: "Too many requests",
+        });
+    },
+    store: new RedisStore({
+        sendCommand: (...args) => redisClient.call(...args),
+    }),
+});
+app.use(rateLimiter);
+
+app.use((req, res, next)=>{
+    logger.info(`Received ${req.method} - ${req.url}`);
+    logger.info(`Request Body: ${JSON.stringify(req.body)}`);
+    next();
 });
 
-app.listen(3001, () => {
-    console.log('API Gateway listening on port 3001');
-});
+const proxyOptions = {
+    proxyReqPathResolver: function(req){
+        return req.originalUrl.replace('/^\v1/', '/api');
+    },
+    proxyErrorHandler: function(err, res, next){
+        logger.error(err);
+        res.status(500).json({
+            message: "Internal Server Error", error: err.message
+        });
+    },  
+};
+
+
+app.use('/v1/auth', proxy(process.env.IDENTITY_SERVICE_URL, {
+    ...proxyOptions,
+    proxyReqOptDecorator: (proxyReqOpts, srcReq) => {
+        proxyReqOpts.headers['Content-Type'] = "application/json";
+        return proxyReqOpts;
+    },
+    userResDecorator: (proxyRes, proxyResData, userReq, userRes) => {
+        logger.info(`Received ${proxyRes.statusCode} from Identity Service`);
+        return proxyResData;
+    }
+
+}));
+
+app.use(errorHandler)
+
+
+
+app.listen(PORT, () => {
+    logger.info(`Server running on port ${PORT}`);
+    logger.info(`Identity Service is running on port ${process.env.IDENTITY_SERVICE_URL}`);
+    logger.info(`Redis is running on port ${REDIS_PORT}`);
+  
+}
+);
