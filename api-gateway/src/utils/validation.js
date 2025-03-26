@@ -1,4 +1,3 @@
-
 const joi = require('joi');
 
 const validateRegistration = (data) => {
