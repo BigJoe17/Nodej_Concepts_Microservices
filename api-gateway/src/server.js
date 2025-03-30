@@ -9,7 +9,6 @@ const logger = require('./utils/logger');
 const proxy = require('express-http-proxy');
 const errorHandler = require('./middleware/errorhandler');
 const { validateToken } = require('./middleware/authmiddleware');
-
 const app = express();
 
 const PORT = process.env.PORT || 3000;
@@ -46,7 +45,6 @@ const rateLimiter = rateLimit({
         sendCommand: (...args) => redisClient.call(...args),
     }),
 });
-app.use(rateLimiter);
 
 app.use((req, res, next) => {
     logger.info(`Received ${req.method} - ${req.url}`);
@@ -91,12 +89,35 @@ app.use('/v1/posts', validateToken, proxy(process.env.POST_SERVICE_URL, {
     },
 }));
 
+app.use('/v1/media', validateToken, proxy(process.env.MEDIA_SERVICE_URL, {
+    ...proxyOptions,
+    proxyReqOptDecorator: (proxyReqOpts, srcReq) => {
+        proxyReqOpts.headers['x-user-id'] = srcReq.user.userId;
+
+        // Safely check if Content-Type exists and starts with 'multipart/form-data'
+        if (srcReq.headers['content-type'] && srcReq.headers['content-type'].startsWith('multipart/form-data')) {
+            proxyReqOpts.headers['Content-Type'] = srcReq.headers['content-type'];
+        } else {
+            proxyReqOpts.headers['Content-Type'] = "application/json";
+        }
+
+        return proxyReqOpts;
+    },
+    userResDecorator: (proxyRes, proxyResData, userReq, userRes) => {
+        logger.info(`Received ${proxyRes.statusCode} from Media Service`);
+        return proxyResData;
+    },
+    parseReqBody: false, // Disable body parsing for multipart/form-data
+}));
+
 app.use(errorHandler);
 
 app.listen(PORT, () => {
     logger.info(`Server running on port ${PORT}`);
     logger.info(`Identity Service is running on port ${process.env.IDENTITY_SERVICE_URL}`);
     logger.info(`Post Service is running on port ${process.env.POST_SERVICE_URL}`);
+    logger.info(`Media Service is running on port ${process.env.MEDIA_SERVICE_URLSERVICE_URL}`);
+
     logger.info(`Redis is running on port ${REDIS_PORT}`);
 });
 

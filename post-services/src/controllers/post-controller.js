@@ -1,7 +1,7 @@
 const logger = require("../utils/loggers");
 const Post = require("../models/post");
 const { validateCreatePost } = require("../utils/validation");
-const { cache } = require("joi");
+require("joi");
 
 
  async function  invalidatePostCache( req, input) {

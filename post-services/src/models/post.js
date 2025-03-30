@@ -12,11 +12,13 @@ const postSchema = new mongoose.Schema({
     required: true,
     trim: true
    },
+
     likes: {
      type: Number,
      default: 0
     },
-    mediaUrl:[{
+    
+    mediaIds:[{
         type: String,
         
     }
