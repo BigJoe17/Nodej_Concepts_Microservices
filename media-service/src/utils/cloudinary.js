@@ -15,7 +15,7 @@ const uploadMediaToCloudinary = async (file) => {
    return new Promise ((resolve, reject) => {
     const uploadStream = cloudinary.uploader.upload_stream(
         {
-            resource_type: 'auto'
+            resource_type: 'raw'
         },
         
         (error, result) => {
@@ -34,5 +34,19 @@ const uploadMediaToCloudinary = async (file) => {
         throw new Error(`Error uploading file to cloudinary: ${err.message}`);
     }
 }
+const deleteMediaFromCloudinary = async (publicId) => {
+    try {
+        const result = await cloudinary.uploader.destroy(publicId, {
+            resource_type: 'raw',
+        });
 
-module.exports =  { uploadMediaToCloudinary };
+        logger.info(`Media file deleted from cloud storage: ${JSON.stringify(result)}`);
+        return result;
+    } catch (err) {
+        logger.error(`Error deleting file from cloudinary: ${err.message}`);
+        throw new Error(`Error deleting file from cloudinary: ${err.message}`);
+    }
+};
+
+
+module.exports =  { uploadMediaToCloudinary , deleteMediaFromCloudinary };

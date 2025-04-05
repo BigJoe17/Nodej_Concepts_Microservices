@@ -62,6 +62,24 @@ const uploadMedia = async (req, res) => {
   }
 };
 
+const getAllMedia = async (req, res) => {
+  try {
+      const media = await Media.find({ userId: req.user._id });
+      return res.status(200).json({
+          message: "Media files retrieved successfully",
+          success: true,
+          data: media,
+      });
+  } catch (err) {
+      logger.error(`Error retrieving media: ${err.message}`);
+      return res
+          .status(500)
+          .json({ message: "Internal Server Error", success: false });
+  }
+};
+
+
 module.exports = {
   uploadMedia,
+  getAllMedia,
 };

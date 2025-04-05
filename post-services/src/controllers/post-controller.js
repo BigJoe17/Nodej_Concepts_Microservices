@@ -1,8 +1,8 @@
 const logger = require("../utils/loggers");
 const Post = require("../models/post");
 const { validateCreatePost } = require("../utils/validation");
-require("joi");
-
+const Joi = require("joi");
+const { publishEvent } = require("../utils/rabbitmq");
 
  async function  invalidatePostCache( req, input) {
   const cacheKey = `posts:${input}`;
@@ -36,8 +36,19 @@ const createPost = async (req, res) => {
     });
 
     await newlyCreatedPost.save();
+    console.log("newlyCreatedPost", newlyCreatedPost);
+
+
+    await publishEvent("post.created", {
+      postId: newlyCreatedPost._id.toString(),
+      userId: newlyCreatedPost.user.toString(),
+      content: newlyCreatedPost.content,
+      createdAt: newlyCreatedPost.createdAt,
+      mediaIds: newlyCreatedPost.mediaIds,
+    });
+
     await invalidatePostCache(req, newlyCreatedPost._id.toString());
-    logger.info("Post created successfully");
+    logger.info("Post created successfully", newlyCreatedPost);
     res.status(201).json({
       message: "Post created successfully",
       success: true,
@@ -85,7 +96,7 @@ const getAllPost = async (req, res) => {
        res.json(result );
 
   } catch (q) {
-    logger.error(`Error getting all post : ${e.message}`);
+    logger.error(`Error getting all post : ${ q.message}`);
     return res
       .status(500)
       .json({ message: "Internal Server Error", success: false });
@@ -96,6 +107,12 @@ const getPost = async (req, res) => {
   try {
 
     const PostId = req.params.id;
+    if (!mongoose.Types.ObjectId.isValid(PostId)) {
+      return res.status(400).json({
+        message: "Invalid Post ID",
+        success: false,
+      });
+    }
     const cacheKey = `posts:${PostId}`;
     const cachedPost = await req.redisClient.get(cacheKey);
 
@@ -131,15 +148,28 @@ const getPost = async (req, res) => {
 const deletePost = async (req, res) => {
   try {
     const postId = req.params.id;
-    const deletedPost = await Post.findByIdAndDelete(postId);
+    const post  = await Post.findByIdAndDelete({
+      _id: postId,
+      user: req.user._id,
+    });
+    console.log("userId", req.user);
 
-    if (!deletedPost) {
+    if (!post) {
       return res.status(404).json({
         message: "Post not found",
         success: false
       });
     }
 
+
+    console.log("post deleted", post);
+  
+    await publishEvent("post.deleted",  {
+      
+      postId: post._id.toString(),
+      mediaIds: post.mediaIds,
+      userId: req.user._id
+    });
     // Ensure invalidatePostCache is properly defined and works
     await invalidatePostCache(req, postId);
 
